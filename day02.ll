@@ -1,4 +1,3 @@
-;; TODO: refactor with arrays for colors
 declare ptr @fopen(ptr noundef, ptr noundef) #1
 declare i64 @fread(ptr noundef, i64 noundef, i64 noundef, ptr noundef) #1
 declare i32 @fputs(ptr nocapture noundef readonly, ptr nocapture noundef) local_unnamed_addr #1
@@ -15,91 +14,6 @@ declare i32 @printf(ptr noundef, ...) #1
 @str.print.part1 = private unnamed_addr constant [14 x i8] c"part 1: %llu\0A\00", align 1
 @str.print.part2 = private unnamed_addr constant [14 x i8] c"part 2: %llu\0A\00", align 1
 
-@str.red = private unnamed_addr constant [4 x i8] c"red\00", align 1
-@str.green = private unnamed_addr constant [6 x i8] c"green\00", align 1
-@str.blue = private unnamed_addr constant [5 x i8] c"blue\00", align 1
-
-@i64.red = private unnamed_addr constant i64 1, align 1
-@i64.green = private unnamed_addr constant i64 2, align 1
-@i64.blue = private unnamed_addr constant i64 3, align 1
-
-define i1 @has_prefix(ptr %prefix, ptr %input) {
-  %idx = alloca i64, align 8
-  store i64 0, ptr %idx, align 8
-  br label %loop_start
-
-loop_start:
-  %idx_val = load i64, ptr %idx, align 8
-  %idx_incremented = add i64 1, %idx_val
-  store i64 %idx_incremented, ptr %idx, align 8
-
-  %prefix_chr_ptr = getelementptr i8, ptr %prefix, i64 %idx_val
-  %prefix_chr = load i8, ptr %prefix_chr_ptr, align 2
-  %prefix_eof = icmp eq i8 %prefix_chr, 0
-  br i1 %prefix_eof, label %true, label %continue.0
-
-continue.0:
-  %input_chr_ptr = getelementptr i8, ptr %input, i64 %idx_val
-  %input_chr = load i8, ptr %input_chr_ptr, align 2
-  %input_eof = icmp eq i8 %input_chr, 0
-  br i1 %input_eof, label %false, label %continue.1
-
-continue.1:
-  %chars_eq = icmp eq i8 %prefix_chr, %input_chr
-  br i1 %chars_eq, label %loop_start, label %false
-
-true:
-  ret i1 1
-
-false:
-  ret i1 0
-}
-
-define i64 @decode_str_color(ptr %buf, ptr %idx) {
-  %color_idx = load i64, ptr %idx, align 8
-  %color_ptr = getelementptr i8, ptr %buf, i64 %color_idx
-
-  %is_red = call i1 @has_prefix(ptr @str.red, ptr %color_ptr)
-  br i1 %is_red, label %red, label %not_red
-
-red:
-  %idx_val_red = load i64, ptr %idx, align 8
-  %idx_incremented_red = add i64 3, %idx_val_red
-  store i64 %idx_incremented_red, ptr %idx, align 8
-
-  %red_val = load i64, ptr @i64.red, align 8
-  ret i64 %red_val
-
-not_red:
-
-  %is_green = call i1 @has_prefix(ptr @str.green, ptr %color_ptr)
-  br i1 %is_green, label %green, label %not_green
-
-green:
-  %idx_val_green = load i64, ptr %idx, align 8
-  %idx_incremented_green = add i64 5, %idx_val_green
-  store i64 %idx_incremented_green, ptr %idx, align 8
-
-  %green_val = load i64, ptr @i64.green, align 8
-  ret i64 %green_val
-
-not_green:
-
-  %is_blue = call i1 @has_prefix(ptr @str.blue, ptr %color_ptr)
-  br i1 %is_blue, label %blue, label %not_blue
-
-blue:
-  %idx_val_blue = load i64, ptr %idx, align 8
-  %idx_incremented_blue = add i64 4, %idx_val_blue
-  store i64 %idx_incremented_blue, ptr %idx, align 8
-
-  %blue_val = load i64, ptr @i64.blue, align 8
-  ret i64 %blue_val
-
-not_blue:
-  ret i64 0
-}
-
 define void @skip_to(ptr %buf, ptr %idx_ptr, i8 %target) {
   br label %loop_start
 loop_start:
@@ -115,6 +29,36 @@ loop_start:
 
 quit:
   ret void
+}
+
+define i64 @parse_color(ptr %buf, ptr %idx) {
+  %color_idx = load i64, ptr %idx
+  %color_ptr = getelementptr i8, ptr %buf, i64 %color_idx
+  %chr = load i8, ptr %color_ptr
+
+  switch i8 %chr, label %otherwise
+    [ i8 114, label %red
+      i8 103, label %green
+      i8 98, label %blue
+    ]
+  
+red:
+  %idx.red = add i64 %color_idx, 3
+  store i64 %idx.red, ptr %idx
+  ret i64 1
+
+green:
+  %idx.green = add i64 %color_idx, 5
+  store i64 %idx.green, ptr %idx
+  ret i64 2
+
+blue:
+  %idx.blue = add i64 %color_idx, 4
+  store i64 %idx.blue, ptr %idx
+  ret i64 3
+
+otherwise:
+  ret i64 0
 }
 
 define i64 @parse_i64(ptr %buf, ptr %idx_ptr) {
@@ -152,51 +96,12 @@ is_not_digit:
   ret i64 %acc.final
 }
 
-define i1 @is_above_limit(i64 %num, i64 %color) {
-  %red_const = load i64, ptr @i64.red
-  %is_red = icmp eq i64 %color, %red_const
-  br i1 %is_red, label %red, label %not_red
-
-red:
-  %is_above_red = icmp sgt i64 %num, 12
-  ret i1 %is_above_red
-
-not_red:
-
-  %green_const = load i64, ptr @i64.green
-  %is_green = icmp eq i64 %color, %green_const
-  br i1 %is_green, label %green, label %not_green
-
-green:
-  %is_above_green = icmp sgt i64 %num, 13
-  ret i1 %is_above_green
-
-not_green:
-
-  %blue_const = load i64, ptr @i64.blue
-  %is_blue = icmp eq i64 %color, %blue_const
-  br i1 %is_blue, label %blue, label %not_blue
-
-blue:
-  %is_above_blue = icmp sgt i64 %num, 14
-  ret i1 %is_above_blue
-
-not_blue:
-  ret i1 0 ;; ERROR
-}
-
 define i1 @char_eq(ptr %buf, ptr %idx, i8 %expected) {
   %idx_val = load i64, ptr %idx, align 8
   %chr_ptr = getelementptr i8, ptr %buf, i64 %idx_val
   %chr = load i8, ptr %chr_ptr, align 2
   %matches = icmp eq i8 %expected, %chr
-  br i1 %matches, label %true, label %false
-
-false:
-  ret i1 0
-
-true:
-  ret i1 1
+  ret i1 %matches
 }
 
 define void @incr(ptr %val) {
@@ -206,7 +111,14 @@ define void @incr(ptr %val) {
   ret void
 }
 
-define void @add.i64(ptr %dest, ptr %op) {
+define void @add.i64(ptr %dest, i64 %op) {
+  %val = load i64, ptr %dest
+  %incremented = add i64 %op, %val
+  store i64 %incremented, ptr %dest, align 8
+  ret void
+}
+
+define void @add.i64.ptr(ptr %dest, ptr %op) {
   %val = load i64, ptr %dest
   %op.val = load i64, ptr %op
 
@@ -218,36 +130,32 @@ define void @add.i64(ptr %dest, ptr %op) {
 define i64 @part_1(ptr %buf) {
   %stderr = load ptr, ptr @stderr, align 8
 
-  %first_digit = alloca i64, align 8
-  store i64 0, ptr %first_digit, align 8
-
   %total_sum = alloca i64, align 8
   store i64 0, ptr %total_sum, align 8
 
   %idx = alloca i64, align 8
   store i64 0, ptr %idx, align 8
 
-  %game_id_ptr = alloca i64, align 8
-  store i64 1, ptr %game_id_ptr, align 8
-
   br label %loop_start
 
 loop_start:
-  %eof = call i1 @char_eq(ptr %buf, ptr %idx, i8 0)
+  %eof = call fastcc i1 @char_eq(ptr %buf, ptr %idx, i8 0)
   br i1 %eof, label %quit, label %not_eof
 
 not_eof:
-  call void @skip_to(ptr %buf, ptr %idx, i8 32) ; strip 'Game'
-  call void @skip_to(ptr %buf, ptr %idx, i8 32) ; strip game id
+  call fastcc void @skip_to(ptr %buf, ptr %idx, i8 32) ; strip 'Game'
+  %game_id = call fastcc i64 @parse_i64(ptr %buf, ptr %idx)
+  call fastcc void @add.i64(ptr %idx, i64 2)
   br label %line_loop_start
 
 line_loop_start:
-  %num = call i64 @parse_i64(ptr %buf, ptr %idx)
-  call void @skip_to(ptr %buf, ptr %idx, i8 32)
-  %color = call i64 @decode_str_color(ptr %buf, ptr %idx)
-  %is_newline = call i1 @char_eq(ptr %buf, ptr %idx, i8 10)
+  %num = call fastcc i64 @parse_i64(ptr %buf, ptr %idx)
+  call fastcc void @skip_to(ptr %buf, ptr %idx, i8 32)
+  %color = call fastcc i64 @parse_color(ptr %buf, ptr %idx)
+  %is_newline = call fastcc i1 @char_eq(ptr %buf, ptr %idx, i8 10)
 
-  %is_over_limit = call i1 @is_above_limit(i64 %num, i64 %color)
+  %limit = add i64 %color, 11
+  %is_over_limit = icmp sgt i64 %num, %limit
 
   br i1 %is_over_limit, label %over_limit, label %not_over_limit
 
@@ -255,21 +163,17 @@ not_over_limit:
   br i1 %is_newline, label %newline, label %not_newline
 
 over_limit:
-  call void @skip_to(ptr %buf, ptr %idx, i8 10)
+  call fastcc void @skip_to(ptr %buf, ptr %idx, i8 10)
 
-  %tmp = load i64, ptr %game_id_ptr
-  call void @incr(ptr %game_id_ptr)
   br label %loop_start
 
 newline:
-  %game_id = load i64, ptr %game_id_ptr
-  call void @add.i64(ptr %total_sum, ptr %game_id_ptr)
-  call void @incr(ptr %game_id_ptr)
-  call void @incr(ptr %idx)
+  call fastcc void @add.i64(ptr %total_sum, i64 %game_id)
+  call fastcc void @incr(ptr %idx)
   br label %loop_start
 
 not_newline:
-  call void @skip_to(ptr %buf, ptr %idx, i8 32)
+  call fastcc void @skip_to(ptr %buf, ptr %idx, i8 32)
   br label %line_loop_start
 
 quit:
@@ -291,43 +195,30 @@ no_update:
 }
 
 define void @update_maximums(i64 %num, i64 %color, ptr %max_red_ptr, ptr %max_green_ptr, ptr %max_blue_ptr) {
-  %red_const = load i64, ptr @i64.red
-  %is_red = icmp eq i64 %color, %red_const
-  br i1 %is_red, label %red, label %not_red
+  switch i64 %color, label %otherwise
+    [ i64 1, label %red
+      i64 2, label %green
+      i64 3, label %blue
+    ]
 
 red:
-  call void @update_maximum(i64 %num, ptr %max_red_ptr)
+  call fastcc void @update_maximum(i64 %num, ptr %max_red_ptr)
   ret void
-
-not_red:
-
-  %green_const = load i64, ptr @i64.green
-  %is_green = icmp eq i64 %color, %green_const
-  br i1 %is_green, label %green, label %not_green
 
 green:
-  call void @update_maximum(i64 %num, ptr %max_green_ptr)
+  call fastcc void @update_maximum(i64 %num, ptr %max_green_ptr)
   ret void
-
-not_green:
-
-  %blue_const = load i64, ptr @i64.blue
-  %is_blue = icmp eq i64 %color, %blue_const
-  br i1 %is_blue, label %blue, label %not_blue
 
 blue:
-  call void @update_maximum(i64 %num, ptr %max_blue_ptr)
+  call fastcc void @update_maximum(i64 %num, ptr %max_blue_ptr)
   ret void
 
-not_blue:
-  ret void ;; ERROR
+otherwise:
+  ret void
 }
 
 define i64 @part_2(ptr %buf) {
   %stderr = load ptr, ptr @stderr, align 8
-
-  %first_digit = alloca i64, align 8
-  store i64 0, ptr %first_digit, align 8
 
   %total_sum = alloca i64, align 8
   store i64 0, ptr %total_sum, align 8
@@ -347,21 +238,21 @@ define i64 @part_2(ptr %buf) {
   br label %loop_start
 
 loop_start:
-  %eof = call i1 @char_eq(ptr %buf, ptr %idx, i8 0)
+  %eof = call fastcc i1 @char_eq(ptr %buf, ptr %idx, i8 0)
   br i1 %eof, label %quit, label %not_eof
 
 not_eof:
-  call void @skip_to(ptr %buf, ptr %idx, i8 32) ; strip 'Game'
-  call void @skip_to(ptr %buf, ptr %idx, i8 32) ; strip game id
+  call fastcc void @skip_to(ptr %buf, ptr %idx, i8 32) ; strip 'Game'
+  call fastcc void @skip_to(ptr %buf, ptr %idx, i8 32) ; strip game id
   br label %line_loop_start
 
 line_loop_start:
-  %num = call i64 @parse_i64(ptr %buf, ptr %idx)
-  call void @skip_to(ptr %buf, ptr %idx, i8 32)
-  %color = call i64 @decode_str_color(ptr %buf, ptr %idx)
-  %is_newline = call i1 @char_eq(ptr %buf, ptr %idx, i8 10)
+  %num = call fastcc i64 @parse_i64(ptr %buf, ptr %idx)
+  call fastcc void @skip_to(ptr %buf, ptr %idx, i8 32)
+  %color = call fastcc i64 @parse_color(ptr %buf, ptr %idx)
+  %is_newline = call fastcc i1 @char_eq(ptr %buf, ptr %idx, i8 10)
 
-  call void @update_maximums(i64 %num, i64 %color, ptr %max_red_ptr, ptr %max_green_ptr, ptr %max_blue_ptr)
+  call fastcc void @update_maximums(i64 %num, i64 %color, ptr %max_red_ptr, ptr %max_green_ptr, ptr %max_blue_ptr)
 
   br i1 %is_newline, label %newline, label %not_newline
 
@@ -380,11 +271,11 @@ newline:
   store i64 0, ptr %max_green_ptr, align 8
   store i64 0, ptr %max_blue_ptr, align 8
 
-  call void @incr(ptr %idx)
+  call fastcc void @incr(ptr %idx)
   br label %loop_start
 
 not_newline:
-  call void @skip_to(ptr %buf, ptr %idx, i8 32)
+  call fastcc void @skip_to(ptr %buf, ptr %idx, i8 32)
   br label %line_loop_start
 
 quit:
@@ -433,10 +324,10 @@ process_file:
   %last_char = getelementptr i8, ptr %buf, i64 %read_bytes
   store i8 0, ptr %last_char, align 8
 
-  %part_1_answer = call i64 @part_1(ptr %buf)
+  %part_1_answer = call fastcc i64 @part_1(ptr %buf)
   call i32 @printf(ptr @str.print.part1, i64 %part_1_answer)
 
-  %part_2_answer = call i64 @part_2(ptr %buf)
+  %part_2_answer = call fastcc i64 @part_2(ptr %buf)
   call i32 @printf(ptr @str.print.part2, i64 %part_2_answer)
 
   ret i32 0

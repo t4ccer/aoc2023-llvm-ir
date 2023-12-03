@@ -55,6 +55,7 @@
               pkgs.gdb
               pkgs.valgrind
               pkgs.hyperfine
+              pkgs.linuxKernel.packages.linux_6_6.perf
             ];
             buildInputs = [
               pkgs.pkgsStatic.musl
