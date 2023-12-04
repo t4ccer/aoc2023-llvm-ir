@@ -5,4 +5,4 @@
 	clang $^ -o $@ -static -fuse-ld=lld -O3
 
 .PHONY: all
-all: day01 day02
+all: day01 day02 day03
