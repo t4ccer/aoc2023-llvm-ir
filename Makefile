@@ -4,5 +4,7 @@
 %: %.o
 	clang $^ -o $@ -static -fuse-ld=lld -O3
 
+SOURCES := $(wildcard *.ll)
+
 .PHONY: all
-all: day01 day02 day03
+all: $(patsubst %.ll,%,$(SOURCES))
