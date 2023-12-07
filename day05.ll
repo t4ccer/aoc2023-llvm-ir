@@ -1,6 +1,3 @@
-;; NOTE: This one may take 3-5 minutes to finish
-;; It implements part 2 with a dumb approach of actually doing billions of iterations
-
 declare ptr @fopen(ptr noundef, ptr noundef) #1
 declare i64 @fread(ptr noundef, i64 noundef, i64 noundef, ptr noundef) #1
 declare i32 @fputs(ptr nocapture noundef readonly, ptr nocapture noundef) local_unnamed_addr #1
@@ -16,11 +13,6 @@ declare i32 @printf(ptr noundef, ...) #1
 @str.err_buffer_too_small = private unnamed_addr constant [34 x i8] c"Could not fit file in the buffer\0A\00"
 @str.print.part1 = private unnamed_addr constant [14 x i8] c"part 1: %lld\0A\00"
 @str.print.part2 = private unnamed_addr constant [14 x i8] c"part 2: %lld\0A\00"
-
-@str.print.chr = private unnamed_addr constant [10 x i8] c"char: %c\0A\00"
-@str.print.entry = private unnamed_addr constant [23 x i8] c"entry: %lld %lld %lld\0A\00"
-
-%struct.gear = type { i64, i64, i64 }
 
 define void @add.i64(ptr %dest, i64 %op) {
   %val = load i64, ptr %dest
@@ -299,6 +291,195 @@ loop_end:
   ret i64 %min
 }
 
+%list_i64_inner_t = type [ 32 x i64 ]
+%list_i64_t = type { i64, %list_i64_inner_t }
+
+define i64 @list_i64_len(ptr %list) {
+  %len.ptr = getelementptr i64, ptr %list, i64 0
+  %len = load i64, ptr %len.ptr
+  ret i64 %len
+}
+
+define void @list_i64_pop_from_push_to(ptr %src, ptr %dst) {
+  %src.len.ptr = getelementptr i64, ptr %src, i64 0
+  br label %loop
+
+loop:
+  %src.len = load i64, ptr %src.len.ptr
+  %is_done = icmp eq i64 0, %src.len
+  br i1 %is_done, label %quit, label %loop_cont
+
+loop_cont:
+  %end = call fastcc i64 @list_i64_pop(ptr %src)
+  %start = call fastcc i64 @list_i64_pop(ptr %src)
+  call fastcc void @list_i64_push_pair(ptr %dst, i64 %start, i64 %end)
+
+  br label %loop
+
+quit:
+  ret void
+}
+
+define void @list_i64_reset(ptr %list) {
+  store i64 0, ptr %list
+  ret void
+}
+
+define i64 @list_i64_pop(ptr %list) {
+  %len = load i64, ptr %list
+  %new_len = add i64 %len, -1
+  store i64 %new_len, ptr %list
+  %elem.ptr = getelementptr %list_i64_t, ptr %list, i64 0, i32 1, i64 %new_len
+  %elem = load i64, ptr %elem.ptr
+  ret i64 %elem
+}
+
+define void @list_i64_push(ptr %list, i64 %value) {
+  %len = load i64, ptr %list
+  %new_len = add i64 %len, 1
+  store i64 %new_len, ptr %list
+
+  %elem.ptr = getelementptr %list_i64_t, ptr %list, i64 0, i32 1, i64 %len
+  store i64 %value, ptr %elem.ptr
+
+  ret void
+}
+
+define void @list_i64_push_pair(ptr %list, i64 %start, i64 %end) {
+  call fastcc void @list_i64_push(ptr %list, i64 %start)
+  call fastcc void @list_i64_push(ptr %list, i64 %end)
+  ret void
+}
+
+define i64 @min(i64 %lhs, i64 %rhs) {
+  %c = icmp slt i64 %lhs, %rhs
+  br i1 %c, label %l, label %r
+l:
+  ret i64 %lhs
+
+r:
+  ret i64 %rhs
+}
+
+define i64 @max(i64 %lhs, i64 %rhs) {
+  %c = icmp sgt i64 %lhs, %rhs
+  br i1 %c, label %l, label %r
+l:
+  ret i64 %lhs
+
+r:
+  ret i64 %rhs
+}
+
+define void @map_range(ptr %input_ranges.ptr, ptr %output_ranges.ptr, ptr %map, i64 %map.len) {
+  %all_ranges.ptr = alloca %list_i64_t
+  call fastcc void @list_i64_reset(ptr %all_ranges.ptr)
+
+  %new_input_ranges.ptr = alloca %list_i64_t
+  call fastcc void @list_i64_reset(ptr %new_input_ranges.ptr)
+
+  %idx = alloca i64
+  store i64 0, ptr %idx
+
+  br label %map_loop_start
+
+map_loop_start:
+  call fastcc void @list_i64_reset(ptr %new_input_ranges.ptr)
+  %idx_val = load i64, ptr %idx
+  call fastcc void @incr.i64(ptr %idx)
+  %map_is_over = icmp eq i64 %idx_val, %map.len
+  br i1 %map_is_over, label %map_loop_end, label %map_loop_cont
+
+map_loop_cont:
+  %map_entry.ptr.0 = getelementptr %map_entry_t, ptr %map, i64 %idx_val, i32 0
+  %destination_start = load i64, ptr %map_entry.ptr.0
+
+  %map_entry.ptr.1 = getelementptr %map_entry_t, ptr %map, i64 %idx_val, i32 1
+  %source_start = load i64, ptr %map_entry.ptr.1
+
+  %map_entry.ptr.2 = getelementptr %map_entry_t, ptr %map, i64 %idx_val, i32 2
+  %range_len = load i64, ptr %map_entry.ptr.2
+
+  %source_end = add i64 %source_start, %range_len
+
+  br label %range_loop_start
+
+range_loop_start:
+  %input_ranges.len.ptr = getelementptr i64, ptr %input_ranges.ptr, i64 0
+  %input_ranges.len = load i64, ptr %input_ranges.len.ptr
+  %range_is_done = icmp eq i64 0, %input_ranges.len
+  br i1 %range_is_done, label %range_loop_end, label %range_loop_cont
+
+range_loop_cont:
+  %range.end = call fastcc i64 @list_i64_pop(ptr %input_ranges.ptr)
+  %range.start = call fastcc i64 @list_i64_pop(ptr %input_ranges.ptr)
+
+  %before.end = call fastcc i64 @min(i64 %range.end, i64 %source_start)
+
+  %inter.start = call fastcc i64 @max(i64 %range.start, i64 %source_start)
+  %inter.end = call fastcc i64 @min(i64 %source_end, i64 %range.end)
+
+  %after.start = call fastcc i64 @max(i64 %source_end, i64 %range.start)
+
+  %is_c1 = icmp sgt i64 %before.end, %range.start
+  br i1 %is_c1, label %c1, label %not_c1
+
+c1:
+  call fastcc void @list_i64_push_pair(ptr %new_input_ranges.ptr, i64 %range.start, i64 %before.end)
+  br label %not_c1
+
+not_c1:
+  %is_c2 = icmp sgt i64 %inter.end, %inter.start
+  br i1 %is_c2, label %c2, label %not_c2
+
+c2:
+  %a.offset = sub i64 %destination_start, %source_start
+  %a.start = add i64 %inter.start, %a.offset
+  %a.end = add i64 %inter.end, %a.offset
+  call fastcc void @list_i64_push_pair(ptr %all_ranges.ptr, i64 %a.start, i64 %a.end)
+  br label %not_c2
+
+not_c2:
+  %is_c3 = icmp sgt i64 %range.end, %after.start
+  br i1 %is_c3, label %c3, label %not_c3
+
+c3:
+  call fastcc void @list_i64_push_pair(ptr %new_input_ranges.ptr, i64 %after.start, i64 %range.end)
+  br label %not_c3
+
+not_c3:
+  br label %range_loop_start
+
+range_loop_end:
+  call fastcc void @list_i64_pop_from_push_to(ptr %new_input_ranges.ptr, ptr %input_ranges.ptr)
+  br label %map_loop_start
+
+map_loop_end:
+  call fastcc void @list_i64_pop_from_push_to(ptr %all_ranges.ptr, ptr %output_ranges.ptr)
+  call fastcc void @list_i64_pop_from_push_to(ptr %input_ranges.ptr, ptr %output_ranges.ptr)
+  ret void
+}
+
+define void @update_min_in_range(ptr %acc.min, ptr %list) {
+  %len.ptr = getelementptr i64, ptr %list, i32 0
+  %len_start = load i64, ptr %len.ptr
+  br label %loop
+
+loop:
+  %len = load i64, ptr %len.ptr
+  %is_done = icmp eq i64 0, %len
+  br i1 %is_done, label %quit, label %loop_cont
+
+loop_cont:
+  %end = call fastcc i64 @list_i64_pop(ptr %list)
+  %start = call fastcc i64 @list_i64_pop(ptr %list)
+  call fastcc void @update_min(ptr %acc.min, i64 %start)
+  br label %loop
+
+quit:
+  ret void
+}
+
 define i64 @part_2(ptr %buf, i64 %buf_size) {
   %idx = alloca i64
   store i64 0, ptr %idx
@@ -336,45 +517,52 @@ define i64 @part_2(ptr %buf, i64 %buf_size) {
   br label %loop_start
 
 loop_start:
-  %seed_idx = load i64, ptr %seed_idx.ptr
+  %ranges_a = alloca %list_i64_t
+  %ranges_b = alloca %list_i64_t
+
+  %seed_start_idx = load i64, ptr %seed_idx.ptr
+
+  %seed_range_idx = add i64 %seed_start_idx, 1
   call fastcc void @add.i64(ptr %seed_idx.ptr, i64 2)
-  %seed_idx.over = icmp eq i64 %seed_idx, %seeds_count
+
+  %seed_idx.over = icmp eq i64 %seed_start_idx, %seeds_count
   br i1 %seed_idx.over, label %loop_end, label %loop_cont
 
 loop_cont:
-  %seed_start.ptr = getelementptr i64, ptr %seeds, i64 %seed_idx
-  %seed_start = load i64, ptr %seed_start.ptr
+  %seed_start_ptr = getelementptr i64, ptr %seeds, i64 %seed_start_idx
+  %seed_start = load i64, ptr %seed_start_ptr ; inclusive
 
-  %seed_range_idx = add i64 %seed_idx, 1
-  %seed_range.ptr = getelementptr i64, ptr %seeds, i64 %seed_range_idx
-  %seed_range = load i64, ptr %seed_range.ptr
+  %seed_range_ptr = getelementptr i64, ptr %seeds, i64 %seed_range_idx
+  %seed_range = load i64, ptr %seed_range_ptr
 
-  %last_seed = add i64 %seed_start, %seed_range
+  %seed_end = add i64 %seed_start, %seed_range ; exclusive
 
-  %curr_seed_idx.ptr = alloca i64
-  store i64 %seed_start, ptr %curr_seed_idx.ptr
+  call fastcc void @list_i64_reset(ptr %ranges_a)
+  call fastcc void @list_i64_push_pair(ptr %ranges_a, i64 %seed_start, i64 %seed_end)
 
-  br label %loop_start_inner
+  call fastcc void @list_i64_reset(ptr %ranges_b)
+  call fastcc void @map_range(ptr %ranges_a, ptr %ranges_b, ptr %map.seed_to_soil, i64 %map.seed_to_soil.len)
 
-loop_start_inner:
-  %curr_seed = load i64, ptr %curr_seed_idx.ptr
-  call fastcc void @incr.i64(ptr %curr_seed_idx.ptr)
-  %curr_seed.over = icmp sgt i64 %curr_seed, %last_seed
+  call fastcc void @list_i64_reset(ptr %ranges_a)
+  call fastcc void @map_range(ptr %ranges_b, ptr %ranges_a, ptr %map.soil_to_fertilizer, i64 %map.soil_to_fertilizer.len)
 
-  br i1 %curr_seed.over, label %loop_end_inner, label %loop_cont_inner
+  call fastcc void @list_i64_reset(ptr %ranges_b)
+  call fastcc void @map_range(ptr %ranges_a, ptr %ranges_b, ptr %map.fertilizer_to_water, i64 %map.fertilizer_to_water.len)
 
-loop_cont_inner:
-  %step.0 = call fastcc i64 @map_number(i64 %curr_seed, ptr %map.seed_to_soil, i64 %map.seed_to_soil.len)
-  %step.1 = call fastcc i64 @map_number(i64 %step.0, ptr %map.soil_to_fertilizer, i64 %map.soil_to_fertilizer.len)
-  %step.2 = call fastcc i64 @map_number(i64 %step.1, ptr %map.fertilizer_to_water, i64 %map.fertilizer_to_water.len)
-  %step.3 = call fastcc i64 @map_number(i64 %step.2, ptr %map.water_to_light, i64 %map.water_to_light.len)
-  %step.4 = call fastcc i64 @map_number(i64 %step.3, ptr %map.light_to_temperature, i64 %map.light_to_temperature.len)
-  %step.5 = call fastcc i64 @map_number(i64 %step.4, ptr %map.temperature_to_humidity, i64 %map.temperature_to_humidity.len)
-  %mapped = call fastcc i64 @map_number(i64 %step.5, ptr %map.humidity_to_location, i64 %map.humidity_to_location.len)
-  call fastcc void @update_min(ptr %acc.ptr, i64 %mapped)
-  br label %loop_start_inner
+  call fastcc void @list_i64_reset(ptr %ranges_a)
+  call fastcc void @map_range(ptr %ranges_b, ptr %ranges_a, ptr %map.water_to_light, i64 %map.water_to_light.len)
 
-loop_end_inner:
+  call fastcc void @list_i64_reset(ptr %ranges_b)
+  call fastcc void @map_range(ptr %ranges_a, ptr %ranges_b, ptr %map.light_to_temperature, i64 %map.light_to_temperature.len)
+
+  call fastcc void @list_i64_reset(ptr %ranges_a)
+  call fastcc void @map_range(ptr %ranges_b, ptr %ranges_a, ptr %map.temperature_to_humidity, i64 %map.temperature_to_humidity.len)
+
+  call fastcc void @list_i64_reset(ptr %ranges_b)
+  call fastcc void @map_range(ptr %ranges_a, ptr %ranges_b, ptr %map.humidity_to_location, i64 %map.humidity_to_location.len)
+
+  call fastcc void @update_min_in_range(ptr %acc.ptr, ptr %ranges_b)
+
   br label %loop_start
 
 loop_end:
